@@ -17,22 +17,54 @@ def getAOI(pathToAoi):
 		path to Shapefile with AOI
 	
 	Returns:
-		boundary coordinates of Shapefile extent
+		boundary coordinates of Shapefile extent as list of four coordinates
+		xMin, xMax, yMin, yMax
 	
 	based on:
 		https://pcjericks.github.io/py-gdalogr-cookbook/vector_layers.html	
 	
 	'''
 	from osgeo import ogr
-	import os
 	
 	driver = ogr.GetDriverByName("ESRI Shapefile")
-	aoi = inDriver.Open(pathToAoi, 0)
+	aoi = driver.Open(pathToAoi, 0)
 	layer = aoi.GetLayer()
 	extent = layer.GetExtent()
 	
+	extent = list(extent)
 	return extent
+
+
+############################
+# get tile metadata
+############################
+
+def getMeta(pathToTile):
+	'''Function to retrieve AOI boundaries
 	
+	
+	Args:
+		path to Shapefile with AOI
+	
+	Returns:
+		boundary coordinates of Shapefile extent as list of four coordinates
+		xMin, xMax, yMin, yMax
+	
+	based on:
+		https://pcjericks.github.io/py-gdalogr-cookbook/vector_layers.html	
+	
+	'''
+	from osgeo import gdal
+	
+	tile = gdal.Open(pathToTile)
+	
+	nrows = tile.RasterXSize
+	ncols = tile.RasterYSize
+	geo_transform = tile.GetGeoTransform()
+	projection = tile.GetProjection()
+	
+	
+	return ncols, nrows, geo_transform, projection
 
 
 ############################
@@ -47,7 +79,7 @@ def findImagery(pathToScenes, shapefileBoundaries=None, outFolder=None):
 	
 	
 	Args:
-		AOI Boundary coordinates
+		AOI Boundary as xMin, xMax, yMin, yMax tuple
 		path to a folder that contains sentinel 2 imagery as unzipped, as downloaded
 		path where output should be copied to
 	
@@ -61,7 +93,7 @@ def findImagery(pathToScenes, shapefileBoundaries=None, outFolder=None):
 	
 	# get single coordinates
 	# depends on structure of boundaries
-	#xMax, xMin, yMax, yMin = shapefileBoundaries
+	xMin, xMax, yMin, yMax = shapefileBoundaries
 	
 	
 	
@@ -81,7 +113,7 @@ def findImagery(pathToScenes, shapefileBoundaries=None, outFolder=None):
 								fn, ext = os.path.splitext(element)
 								
 								if (ext == '.xml'):
-									print element
+									#print element
 									tree = ET.parse(path+element)
 									root = tree.getroot()
 									for child in root:
@@ -100,14 +132,13 @@ def findImagery(pathToScenes, shapefileBoundaries=None, outFolder=None):
 														for uly in geopos.findall('ULY'):
 															ULY = float(uly.text)
 													#print NCOLS, NROWS, ULX, ULY
-													i = 1
+													# i = 1
 													if(ULX < xMin and ULX+NCOLS*Cellsize > xMax and ULY > yMax and ULY-NROWS*Cellsize < yMin):
 														src = pathToScenes+scene+'/'+outerFolder+'/'+data+'/'+tile
-														dst = outFolder + '/' + stile
-														copytree(src, dst)
+														dst = outFolder + '/' + tile
+														print src
+														#copytree(src, dst)
 														break
-													
-
 
 
 
@@ -166,29 +197,104 @@ def clipScenes(pathToScenes, shapefileBoundaries):
 						
 	return ncols, nrows, geo_transform, projection
 						
-############################
-# rasterize vector-training-data
-############################
 						
-def vectors_to_raster(file_paths, rows, cols, geo_transform, projection):
-	'''Rasterize all the vectors in the given directory into a single image.
+############################
+# rasterize vector layer, return raster/ target ds
+############################
+
+def rasterizeVectorData(vector_data_path, rasterized_data_path, cols, rows, geo_transform, projection):
+	'''Rasterize the given vector
 	
+	Args
+		grid system/geo_transform/projection
+		path to directory containing each class as a single vector layer
+		path to output folder of rasterized layer
 	
-	returns labeld groundtruth data
+	takes a vector layer, rasterizes it and dumps it in the folder specified by rasterized_data_path
+	if vector layer is <wald.shp> then raster will be <wald.sgrd> in the given directory	
+	a different raster format could be specified by driver (-->also file extension in driver.Create)
 	
 	'''
+	from osgeo import gdal
+	import os
+	
+	gtRasters = []
+	label_spec = {}
+	i = 1
+	for category in os.listdir(vector_data_path):
+		nm, suf = os.path.splitext(category)
+		if suf == '.shp':
+			print 'Rasterizing ', category, '...'
+			shape = vector_data_path + category
+			data_source = gdal.OpenEx(shape, gdal.OF_VECTOR)
+			layer = data_source.GetLayer(0)
+			# set driver of desired raster output format
+			driver = gdal.GetDriverByName('SAGA')  # In memory dataset
+			
+			fn, ext = os.path.splitext(category)
+			target_ds = driver.Create('%s%s.sdat'%(rasterized_data_path, fn), cols, rows, 1, gdal.GDT_UInt16)
+			
+			#print type(target_ds)
+			target_ds.SetGeoTransform(geo_transform)
+			target_ds.SetProjection(projection)
+			
+			gdal.RasterizeLayer(target_ds, [1], layer, burn_values=[i])
+			
+			print 'Successfully rasterized ', fn +ext
+			
+			grid_path = rasterized_data_path + fn + '.sgrd'
+			gtRasters.append(grid_path)
+			label_spec[i+1] = fn
+			i += 1
+	
+	return gtRasters, label_spec
+	
+
+
+
+
+
+############################
+# load gt rasters into numpy stack
+############################
+
+
+def loadRasters(rasterList):
+	''' Load rasterized Ground truth data to numpy stack
+	
+	Args
+		List with raster paths
+		for SAGA grids
 	
 	
-	labeled_pixels = np.zeros((rows, cols))
-	for i, path in enumerate(file_paths):
-		label = i+1
-		ds = create_mask_from_vector(path, cols, rows, geo_transform, projection, target_value=label)
-		band = ds.GetRasterBand(1)
+	'''
+	import os
+	from osgeo import gdal
+	
+	# get raster metadata from first raster in list
+	cols, rows, geo_transform, projection = getMeta(rasterList[0])
+	
+	
+	for i, path in enumerate(rasterList):
+		
+		raster = os.path.basename(path)
+		fn, ext = os.path.splitext(raster)
+		
+		grid = gdal.Open(path)
+		
+		band = grid.GetRasterBand(1)
+		
 		labeled_pixels += band.ReadAsArray()
-		ds = None
+		
+		grid = None
+		
 	return labeled_pixels
-						
-						
+
+
+
+
+
+
 ############################
 # create/process training/validation-data
 ############################
