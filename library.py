@@ -58,8 +58,8 @@ def getMeta(pathToTile):
 	
 	tile = gdal.Open(pathToTile)
 	
-	nrows = tile.RasterXSize
-	ncols = tile.RasterYSize
+	ncols = tile.RasterXSize
+	nrows = tile.RasterYSize
 	geo_transform = tile.GetGeoTransform()
 	projection = tile.GetProjection()
 	
@@ -229,7 +229,7 @@ def rasterizeVectorData(vector_data_path, rasterized_data_path, cols, rows, geo_
 			data_source = gdal.OpenEx(shape, gdal.OF_VECTOR)
 			layer = data_source.GetLayer(0)
 			# set driver of desired raster output format
-			driver = gdal.GetDriverByName('SAGA')  # In memory dataset
+			driver = gdal.GetDriverByName('SAGA')  # SAGA Grid driver
 			
 			fn, ext = os.path.splitext(category)
 			target_ds = driver.Create('%s%s.sdat'%(rasterized_data_path, fn), cols, rows, 1, gdal.GDT_UInt16)
