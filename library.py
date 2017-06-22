@@ -148,7 +148,7 @@ def findImagery(pathToScenes, shapefileBoundaries=None, outFolder=None):
 ############################
 
 
-def clipScenes(pathToScenes, shapefileBoundaries):
+def clipScenes(pathToScenes, aoiPath):
 	'''Function to clip Satellite imagery to AOI-boundaries and copy/overwrite that to specified Folder
 	
 	
@@ -175,27 +175,40 @@ def clipScenes(pathToScenes, shapefileBoundaries):
 					fn, ext = os.path.splitext(band)
 					
 					if ext == '.jp2':
+						print 'importing: ', pathToScenes+tile+'/'+imgFolder+'/'+band, '\n'
+						print 'clipping with: ', aoiPath, '\n'
+
+
+
 						# SAGA-TOOLS start here
 						# import as sgrd
 						os.system("saga_cmd io_gdal 0 -GRIDS %s -FILES %s -SELECTION 0 -TRANSFORM 0" % (pathToScenes+tile+'/'+imgFolder+'/'+'TMP.sgrd', pathToScenes+tile+'/'+imgFolder+'/'+band))
 						
 						# clip grids
-						os.system('saga_cmd grid_tools 31 -GRIDS %s -CLIPPED %s -EXTENT 2 -SHAPES %s' % (pathToScenes+tile+'/'+imgFolder+'/'+'TMP.sgrd', raster_dataset = gdal.Open(raster_data_path, gdal.GA_ReadOnly)))
+						os.system('saga_cmd grid_tools 31 -GRIDS %s -CLIPPED %s -EXTENT 2 -SHAPES %s' % (pathToScenes+tile+'/'+imgFolder+'/'+'TMP.sgrd', pathToScenes+tile+'/'+imgFolder+'/'+ fn + '.sgrd',  aoiPath))
 						
-						if i = 1:
-							driver = gdal.GetDriverByName('SAGA')
-							raster_dataset = gdal.Open(raster_dataset = gdal.Open(raster_data_path, gdal.GA_ReadOnly), gdal.GA_ReadOnly)
-							geo_transform = raster_dataset.GetGeoTransform()
-							proj = raster_dataset.GetProjectionRef()
-							band = raster_dataset.GetRasterBand(1)
-							band = band.ReadAsArray())
-							rows, cols = bands_data.shape
-							
-							i = i +1
-						
-						# export as ...
-						
-	return ncols, nrows, geo_transform, projection
+						# export grids as geotiff
+						os.system('saga_cmd io_gdal 2 -GRIDS %s -FILE %s' % (pathToScenes+tile+'/'+imgFolder+'/'+ fn + '.sgrd', pathToScenes+tile+'/'+imgFolder+'/'+ fn + '.tif'))
+
+
+						# clean up data *.sdat grids
+						print 'Delete files: ', pathToScenes+tile+'/'+imgFolder+'/'+ fn + '.sdat', '\n'
+						os.system('gdalmanage delete -f SAGA %s'%(pathToScenes+tile+'/'+imgFolder+'/'+ fn + '.sdat'))
+						# clean *.mgrd files	
+						os.remove(pathToScenes+tile+'/'+imgFolder+'/'+ fn + '.mgrd')
+
+						# clean up data *.jp2 grids
+						print 'Delete files: ', pathToScenes+tile+'/'+imgFolder+'/'+ band, '\n'
+						os.system('gdalmanage delete %s'%(pathToScenes+tile+'/'+imgFolder+'/'+ band))
+
+				# clean *.mgrd files	
+				os.remove(pathToScenes+tile+'/'+imgFolder+'/'+ 'TMP.mgrd')
+				
+				# delete TMP.sgrds
+				print 'Delete files: ', pathToScenes+tile+'/'+imgFolder+'/'+ 'TMP.sdat', '\n'
+				os.system('gdalmanage delete %s'%(pathToScenes+tile+'/'+imgFolder+'/'+ 'TMP.sdat'))
+
+
 						
 						
 ############################
@@ -213,45 +226,44 @@ def rasterizeVectorData(vector_data_path, rasterized_data_path, cols, rows, geo_
 	takes a vector layer, rasterizes it and dumps it in the folder specified by rasterized_data_path
 	if vector layer is <wald.shp> then raster will be <wald.sgrd> in the given directory	
 	a different raster format could be specified by driver (-->also file extension in driver.Create)
+
+	returns dictionary with values corresponding to a class
 	
 	'''
 	from osgeo import gdal
 	import os
 	
 	gtRasters = []
-	label_spec = {}
+	labelByValue = {}
 	i = 1
 	for category in os.listdir(vector_data_path):
-		nm, suf = os.path.splitext(category)
-		if suf == '.shp':
+		if category.endswith('.shp'):
 			print 'Rasterizing ', category, '...'
 			shape = vector_data_path + category
 			data_source = gdal.OpenEx(shape, gdal.OF_VECTOR)
 			layer = data_source.GetLayer(0)
 			# set driver of desired raster output format
-			driver = gdal.GetDriverByName('SAGA')  # SAGA Grid driver
+			driver = gdal.GetDriverByName('GTiff')
 			
 			fn, ext = os.path.splitext(category)
-			target_ds = driver.Create('%s%s.sdat'%(rasterized_data_path, fn), cols, rows, 1, gdal.GDT_UInt16)
-			
-			#print type(target_ds)
+			target_ds = driver.Create('%s%s.tif'%(rasterized_data_path, fn), cols, rows, 1, gdal.GDT_UInt16)
 			target_ds.SetGeoTransform(geo_transform)
 			target_ds.SetProjection(projection)
+			# set noData value to 0
+			band = target_ds.GetRasterBand(1)
+			band.SetNoDataValue(0)
+
 			
 			gdal.RasterizeLayer(target_ds, [1], layer, burn_values=[i])
 			
 			print 'Successfully rasterized ', fn +ext
 			
-			grid_path = rasterized_data_path + fn + '.sgrd'
+			grid_path = rasterized_data_path + fn + '.tif'
 			gtRasters.append(grid_path)
-			label_spec[i+1] = fn
+			labelByValue[i+1] = fn
 			i += 1
 	
-	return gtRasters, label_spec
-	
-
-
-
+	return gtRasters, labelByValue
 
 
 ############################
@@ -270,10 +282,13 @@ def loadRasters(rasterList):
 	'''
 	import os
 	from osgeo import gdal
+	import numpy as np
 	
 	# get raster metadata from first raster in list
 	cols, rows, geo_transform, projection = getMeta(rasterList[0])
 	
+	labeled_pixels = np.zeros((rows, cols, len(rasterList)))
+	labelByIndex ={}
 	
 	for i, path in enumerate(rasterList):
 		
@@ -281,19 +296,22 @@ def loadRasters(rasterList):
 		fn, ext = os.path.splitext(raster)
 		
 		grid = gdal.Open(path)
-		
+		print 'gdal opened %s'%(raster)
+
 		band = grid.GetRasterBand(1)
+		# band to array
+		band_array = band.ReadAsArray()
 		
-		labeled_pixels += band.ReadAsArray()
+		# add band_array to numpy stack
+		labeled_pixels[:,:,i] = band_array
+		print 'added %s to numpy stack'%(raster)
+		labelByIndex[i] = fn
 		
 		grid = None
-		
-	return labeled_pixels
 
-
-
-
-
+	print 25*'-', '\n\nsuccessfully loaded groundtruth data\n', 25*'-'		
+	return labeled_pixels, labelByIndex
+	
 
 ############################
 # create/process training/validation-data
