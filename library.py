@@ -40,15 +40,14 @@ def getAOI(pathToAoi):
 ############################
 
 def getMeta(pathToTile):
-	'''Function to retrieve AOI boundaries
+	'''Function to retrieve metadata of a grid
 	
 	
 	Args:
-		path to Shapefile with AOI
+		path to grid
 	
 	Returns:
-		boundary coordinates of Shapefile extent as list of four coordinates
-		xMin, xMax, yMin, yMax
+		see return...
 	
 	based on:
 		https://pcjericks.github.io/py-gdalogr-cookbook/vector_layers.html	
@@ -158,7 +157,7 @@ def clipScenes(pathToScenes, aoiPath):
 		path where clipped scenes should be saved to
 	
 	Returns:
-		Scene speficication of GDAL
+		Metadata for clipped 10m grid
 	
 	based on SAGA GIS -Tools
 		
@@ -200,7 +199,11 @@ def clipScenes(pathToScenes, aoiPath):
 						# clean up data *.jp2 grids
 						print 'Delete files: ', pathToScenes+tile+'/'+imgFolder+'/'+ band, '\n'
 						os.system('gdalmanage delete %s'%(pathToScenes+tile+'/'+imgFolder+'/'+ band))
-
+					
+					if (i == 1 and fn.endswith('B03')):
+						metaData = getMeta(pathToScenes+tile+'/'+imgFolder+'/'+ fn + '.tif')
+						i += 1
+				
 				# clean *.mgrd files	
 				os.remove(pathToScenes+tile+'/'+imgFolder+'/'+ 'TMP.mgrd')
 				
@@ -208,7 +211,7 @@ def clipScenes(pathToScenes, aoiPath):
 				print 'Delete files: ', pathToScenes+tile+'/'+imgFolder+'/'+ 'TMP.sdat', '\n'
 				os.system('gdalmanage delete %s'%(pathToScenes+tile+'/'+imgFolder+'/'+ 'TMP.sdat'))
 
-
+	return metaData
 						
 						
 ############################
@@ -219,7 +222,7 @@ def rasterizeVectorData(vector_data_path, rasterized_data_path, cols, rows, geo_
 	'''Rasterize the given vector
 	
 	Args
-		grid system/geo_transform/projection
+		grid system/geo_transform/projection --> set to clipped s2 imagery (output of clipScenes)
 		path to directory containing each class as a single vector layer
 		path to output folder of rasterized layer
 	
@@ -262,7 +265,7 @@ def rasterizeVectorData(vector_data_path, rasterized_data_path, cols, rows, geo_
 			gtRasters.append(grid_path)
 			labelByValue[i+1] = fn
 			i += 1
-	
+	# labelByValue --> values in output raster corresponding to a certain class
 	return gtRasters, labelByValue
 
 
@@ -272,11 +275,13 @@ def rasterizeVectorData(vector_data_path, rasterized_data_path, cols, rows, geo_
 
 
 def loadRasters(rasterList):
-	''' Load rasterized Ground truth data to numpy stack
+	''' Load rasterized Ground truth data to numpy array
 	
 	Args
 		List with raster paths
 		for SAGA grids
+	
+	Assumes that each raster contains unique values for its class and that theses classes do not overlap
 	
 	
 	'''
@@ -309,7 +314,9 @@ def loadRasters(rasterList):
 		
 		grid = None
 
-	print 25*'-', '\n\nsuccessfully loaded groundtruth data\n', 25*'-'		
+	print 25*'-', '\n\nsuccessfully loaded groundtruth data\n', 25*'-'
+	
+	# labelByIndex --> nth array in third dimension corresponding to a certain class (!= array values corresponding to certain class)
 	return labeled_pixels, labelByIndex
 	
 
@@ -317,62 +324,58 @@ def loadRasters(rasterList):
 # create/process training/validation-data
 ############################
 
-def createTrainingValidation(shapePath, ratioTrainValid, rasterStack, rows, cols, geo_transform, projection):
+def createTrainingValidation(gtNumpyArray, labelByIndex trainingSize = 0):
 	'''Function that creates
 		-a random subset of GroundTruth data for training
 		-a random subset of GroundTruth data for validation
-		-choose ratio of training to validation data
+		-choose sampla size of training and validation data
 	
 	Args:
-		path to ground truth shapeFolder
-		ratio of training to validation data
-		
-		raster Stack with classification data
-		raster metadata
+		ground truth data in form of a numpy array, each band in 3rd dimension corresponds to a class
+		training_size: size of training data in pixels
 	
 	Returns:
-		?
+		labeled_training : 2D array with values corresponding to a certain class (= labels)
+		labeled_validation : 2D array with values corresponding to a certain class (= labels)
 	
 	based on https://www.machinalis.com/blog/python-for-geospatial-data-processing/
 		
 	'''
 	
-	import os
 	import numpy as np
-	import numpy.ma as ma
 	
-	files = [f for f in os.listdir(shapePath) if f.endswith('.shp')]
-	classes = [f.split('.')[0] for f in files]
+	dim = gtNumpyArray.shape
+	labeled_training = np.zeros((dim[0], dim[1]))
+	labeled_validation = np.zeros((dim[0], dim[1]))
 	
-	shapefiles = [os.path.join(shapePath, f) for f in files if f.endswith('.shp')]
 	
-	# labeled pixel both training and validation data !
-	labeled_ pixels = vectors_to_raster(shapefiles, rows, cols, geo_transform, projection)
-	
-	is_data = np.nonzero(labeled_pixels)
-	data_labels = labeled_pixels[is_data]
-	data_samples = rasterStack[is_data]
-	
-	rank = isdata[0].shape[0]
-	
-	train_idx = np.random.choice(rank, size= int(rank/2), replace = false)
-	valid_list=[]
-	for i in range(0, len(rank)):
-		if i in train_idx:
-			continue
-		else:
-			valid_list.append(i)
+	for i in gtNumpyArray.shape[2]:
 		
-	valid_idx =  np.asarray(valid_list)
-	
-	for idx in train_idx:
-		training_array = data_samples[isdata[0][idx], isdata[1][idx]]
-	
-	for idx in valid_idx:
-		validation_array = data_samples[isdata[0][idx], isdata[1][idx]]
-			
-	
-	
-	
-	
-	# hier muss gesplittet werden --> zufaellige Auswahl von validation und training pixels
+		data = gtNumpyArray[:,:,i]
+		
+		# tuple of indexes where array is nonzero
+		isData = np.nonzero(data)
+		
+		# extract first array from tuple, get length (== number of pixels that are nonzero)
+		numberDataPixels = isData[0].shape[0]
+		
+		x = int(raw_input('%i pixels for class %s available. Please choose the number of training pixels.\nRemaining Pixels will be used for validation.'%(numberDataPixels, labelByIndex[i])))
+		
+		# choose random numbers from 0 to numberDataPixels
+		# assign this part to training data
+		train_idx = np.random.choice(numberDataPixels, size= x, replace = False)
+		
+		# create validation data indices
+		valid_list=[]
+		for i in range(0, len(numberDataPixels)):
+			if i in train_idx:
+				continue
+			else:
+				valid_list.append(i)
+		valid_idx =  np.asarray(valid_list)
+		
+		labeled_training += data[isData[0][train_idx], isData[0][train_idx]]
+		
+		labeled_validation += data[isData[0][valid_idx], isData[0][valid_idx]]
+
+	return labeled_training, labeled_validation
