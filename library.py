@@ -324,7 +324,7 @@ def loadRasters(rasterList):
 # create/process training/validation-data
 ############################
 
-def createTrainingValidation(gtNumpyArray, labelByIndex trainingSize = 0):
+def createTrainingValidation(gtNumpyArray, labelByIndex, trainingSize = 0):
 	'''Function that creates
 		-a random subset of GroundTruth data for training
 		-a random subset of GroundTruth data for validation
