@@ -66,6 +66,33 @@ def getMeta(pathToTile):
 	return ncols, nrows, geo_transform, projection
 
 
+
+
+
+def write_geotiff(fname, outFolder, data, geo_transform, projection):
+	'''Create a GeoTIFF file with the given data.
+	
+	
+	'''
+	
+	
+	
+	from osgeo import gdal
+	
+	fn = fname + '.tif'
+	
+	driver = gdal.GetDriverByName('GTiff')
+	rows, cols = data.shape
+	dataset = driver.Create(outFolder + fn, cols, rows, 1, gdal.GDT_Byte)
+	dataset.SetGeoTransform(geo_transform)
+	dataset.SetProjection(projection)
+	band = dataset.GetRasterBand(1)
+	band.WriteArray(data)
+	dataset = None  # Close the file
+
+
+
+
 ############################
 # parse Satellite imagery to find matches with Shapefile boundaries
 ############################
@@ -136,36 +163,36 @@ def findImagery(pathToScenes, shapefileBoundaries=None, outFolder=None):
 														src = pathToScenes+scene+'/'+outerFolder+'/'+data+'/'+tile
 														dst = outFolder + '/' + tile
 														print src
-														#copytree(src, dst)
+														copytree(src, dst)
 														break
 
 
-
-
+# old, working function
+'''
 ############################
 # extract AOI on satellite imagery
 ############################
 
 
 def clipScenes(pathToScenes, aoiPath):
-	'''Function to clip Satellite imagery to AOI-boundaries and copy/overwrite that to specified Folder
+	Function to clip Satellite imagery to AOI-boundaries and clean up folder
 	
 	
 	Args:
 		AOI Boundary coordinates
 		path to a folder that contains sentinel 2 tiles that overlap shapefileBoundaries
-		path where clipped scenes should be saved to
 	
 	Returns:
 		Metadata for clipped 10m grid
 	
-	based on SAGA GIS -Tools
+	based on SAGA GIS -Tools and GDAl CMDs
+
+	
 		
-	'''
 	
+
 	import os
-	from osgeo import gdal
-	
+
 	i = 1
 	for tile in os.listdir(pathToScenes):
 		for imgFolder in os.listdir(pathToScenes+tile):
@@ -185,6 +212,7 @@ def clipScenes(pathToScenes, aoiPath):
 						
 						# clip grids
 						os.system('saga_cmd grid_tools 31 -GRIDS %s -CLIPPED %s -EXTENT 2 -SHAPES %s' % (pathToScenes+tile+'/'+imgFolder+'/'+'TMP.sgrd', pathToScenes+tile+'/'+imgFolder+'/'+ fn + '.sgrd',  aoiPath))
+
 						
 						# export grids as geotiff
 						os.system('saga_cmd io_gdal 2 -GRIDS %s -FILE %s' % (pathToScenes+tile+'/'+imgFolder+'/'+ fn + '.sgrd', pathToScenes+tile+'/'+imgFolder+'/'+ fn + '.tif'))
@@ -202,6 +230,7 @@ def clipScenes(pathToScenes, aoiPath):
 					
 					if (i == 1 and fn.endswith('B03')):
 						metaData = getMeta(pathToScenes+tile+'/'+imgFolder+'/'+ fn + '.tif')
+						print 'metadata of clipped scene successfully written to variable'
 						i += 1
 				
 				# clean *.mgrd files	
@@ -212,8 +241,164 @@ def clipScenes(pathToScenes, aoiPath):
 				os.system('gdalmanage delete %s'%(pathToScenes+tile+'/'+imgFolder+'/'+ 'TMP.sdat'))
 
 	return metaData
+'''
+
+
+# clipping with including resampling
+
+
+
+############################
+# extract AOI on satellite imagery including resample process
+############################
+
+
+def clipScenes(pathToScenes, aoiPath):
+	'''Function to clip Satellite imagery to AOI-boundaries and clean up folder
+	
+	
+	Args:
+		AOI Boundary coordinates
+		path to a folder that contains sentinel 2 tiles that overlap shapefileBoundaries
+	
+	Returns:
+		Metadata for clipped 10m grid
+	
+	based on SAGA GIS -Tools and GDAl CMDs
+
+	
+		
+	'''
+	
+	import os
+	
+	resBands = ('B05', 'B06', 'B07', 'B8A', 'B11', 'B12', 'B01', 'B09', 'B10')
+
+	i = 1
+	for tile in os.listdir(pathToScenes):
+		for imgFolder in os.listdir(pathToScenes+tile):
+			if imgFolder == 'IMG_DATA':
+				k = 1
+				for band in os.listdir(pathToScenes+tile+'/'+imgFolder):
+					fn, ext = os.path.splitext(band)
+					
+					
+					
+					if ext == '.jp2':
+						print 'importing: ', pathToScenes+tile+'/'+imgFolder+'/'+band, '\n'
+						print 'clipping with: ', aoiPath, '\n'
+
+						# create reference grid for resampling of coarse bands
+						if (k == 1):
+							os.system("saga_cmd io_gdal 0 -GRIDS %s -FILES %s -SELECTION 0 -TRANSFORM 0" % (pathToScenes+tile+'/'+imgFolder+'/'+'system'+'.sgrd', pathToScenes+tile+'/'+imgFolder+'/'+ fn[:-3] + 'B03' +'.jp2'))
+							k += 1
+
+						# SAGA-TOOLS start here
+						# import as sgrd
+						os.system("saga_cmd io_gdal 0 -GRIDS %s -FILES %s -SELECTION 0 -TRANSFORM 0" % (pathToScenes+tile+'/'+imgFolder+'/'+'TMP.sgrd', pathToScenes+tile+'/'+imgFolder+'/'+band))
 						
+						# resample resBands
+						# read grid system from band nr 3
+						if fn.endswith(resBands):
+							#bandKey = fn[-3:]
+							os.system('saga_cmd grid_tools 0 -INPUT %s -OUTPUT %s -SCALE_UP 5 -TARGET_DEFINITION 1 -TARGET_TEMPLATE %s' % (pathToScenes+tile+'/'+imgFolder+'/'+'TMP.sgrd', pathToScenes+tile+'/'+imgFolder+'/'+'TMP.sgrd', pathToScenes+tile+'/'+imgFolder+'/'+'system'+'.sgrd'))
 						
+						# clip grids
+						os.system('saga_cmd grid_tools 31 -GRIDS %s -CLIPPED %s -EXTENT 2 -SHAPES %s' % (pathToScenes+tile+'/'+imgFolder+'/'+'TMP.sgrd', pathToScenes+tile+'/'+imgFolder+'/'+ fn + '.sgrd',  aoiPath))
+
+						
+						# export grids as geotiff
+						os.system('saga_cmd io_gdal 2 -GRIDS %s -FILE %s' % (pathToScenes+tile+'/'+imgFolder+'/'+ fn + '.sgrd', pathToScenes+tile+'/'+imgFolder+'/'+ fn + '.tif'))
+
+
+						# clean up data *.sdat grids
+						print 'Delete files: ', pathToScenes+tile+'/'+imgFolder+'/'+ fn + '.sdat', '\n'
+						os.system('gdalmanage delete -f SAGA %s'%(pathToScenes+tile+'/'+imgFolder+'/'+ fn + '.sdat'))
+						# clean *.mgrd files	
+						os.remove(pathToScenes+tile+'/'+imgFolder+'/'+ fn + '.mgrd')
+
+						# clean up data *.jp2 grids
+						print 'Delete files: ', pathToScenes+tile+'/'+imgFolder+'/'+ band, '\n'
+						os.system('gdalmanage delete %s'%(pathToScenes+tile+'/'+imgFolder+'/'+ band))
+					
+					if (i == 1 and fn.endswith('B03')):
+						metaData = getMeta(pathToScenes+tile+'/'+imgFolder+'/'+ fn + '.tif')
+						print 'metadata of clipped scene successfully written to variable'
+						i += 1
+				
+				# clean *.mgrd files	
+				os.remove(pathToScenes+tile+'/'+imgFolder+'/'+ 'TMP.mgrd')
+				os.remove(pathToScenes+tile+'/'+imgFolder+'/'+ 'system.mgrd')
+				# delete TMP.sgrds
+				print 'Delete files: ', pathToScenes+tile+'/'+imgFolder+'/'+ 'TMP.sdat', '\n'
+				os.system('gdalmanage delete %s'%(pathToScenes+tile+'/'+imgFolder+'/'+ 'TMP.sdat'))
+				
+				# delete system.sgrds
+				print 'Delete files: ', pathToScenes+tile+'/'+imgFolder+'/'+'system'+'.sdat', '\n'
+				os.system('gdalmanage delete %s'%(pathToScenes+tile+'/'+imgFolder+'/'+'system'+'.sdat'))
+				
+
+	return metaData
+
+
+
+
+
+'''
+############################
+# resample coarse bands to 10m resolution
+############################
+
+
+def resampleBands(pathToScenes):
+	Function to resample bands that from coarse to fine resolution 
+	
+	
+	Args:
+		path to clipped scenes
+	
+	Returns:
+		none
+
+	based on GDAl CMDs
+
+	
+		
+
+	
+	import os
+
+	res = {'B05': 20, 'B06': 20, 'B07': 20, 'B8A': 20, 'B11': 20, 'B12': 20, 'B01': 60, 'B09': 60, 'B10': 60}
+	resBands = ('B05', 'B06', 'B07', 'B8A', 'B11', 'B12', 'B01', 'B09', 'B10')
+	
+	for tile in os.listdir(pathToScenes):
+		for imgFolder in os.listdir(pathToScenes+tile):
+			if imgFolder == 'IMG_DATA':
+				for band in os.listdir(pathToScenes+tile+'/'+imgFolder):
+					fn, ext = os.path.splitext(band)
+					if fn.endswith(resBands):
+						print 'resampling process for %s started', pathToScenes+tile+'/'+imgFolder+'/'+band, '\n'
+						# gdal cmd resampling
+						os.system('gdalwarp [--help-general] [--formats]
+    -s_srs srs_def EPSG:32632 -t_srs srs_def] [-to "NAME=VALUE"]* [-novshiftgrid]
+    [-order n | -tps | -rpc | -geoloc] [-et err_threshold]
+    [-refine_gcps tolerance [minimum_gcps]]
+    [-te xmin ymin xmax ymax] [-te_srs srs_def]
+    [-tr xres yres] [-tap] [-ts width height]
+    [-ovr level|AUTO|AUTO-n|NONE] [-wo "NAME=VALUE"] [-ot Byte/Int16/...] [-wt Byte/Int16]
+    -srcnodata "0" -dstnodata "0"
+    [-srcalpha|-nosrcalpha] [-dstalpha]
+    -r near [-wm memory_in_mb] [-multi] [-q]
+    [-cutline datasource] [-cl layer] [-cwhere expression]
+    [-csql statement] [-cblend dist_in_pixels] [-crop_to_cutline]
+    [-of format] [-co "NAME=VALUE"]* [-overwrite]
+    [-nomd] [-cvmd meta_conflict_value] [-setci] [-oo NAME=VALUE]*
+    [-doo NAME=VALUE]*
+    %s %s')
+'''
+
+
+
 ############################
 # rasterize vector layer, return raster/ target ds
 ############################
@@ -324,7 +509,7 @@ def loadRasters(rasterList):
 # create/process training/validation-data
 ############################
 
-def createTrainingValidation(gtNumpyArray, labelByIndex, trainingSize = 0):
+def createTrainingValidation(gtNumpyArray):
 	'''Function that creates
 		-a random subset of GroundTruth data for training
 		-a random subset of GroundTruth data for validation
@@ -347,35 +532,39 @@ def createTrainingValidation(gtNumpyArray, labelByIndex, trainingSize = 0):
 	dim = gtNumpyArray.shape
 	labeled_training = np.zeros((dim[0], dim[1]))
 	labeled_validation = np.zeros((dim[0], dim[1]))
+	print 'created arrays'
 	
-	
-	for i in gtNumpyArray.shape[2]:
-		
+	for i in range(0,dim[2]):
+		print 'started loop'
 		data = gtNumpyArray[:,:,i]
+		print 'a'
 		
 		# tuple of indexes where array is nonzero
 		isData = np.nonzero(data)
-		
+		print 'b'
 		# extract first array from tuple, get length (== number of pixels that are nonzero)
 		numberDataPixels = isData[0].shape[0]
-		
-		x = int(raw_input('%i pixels for class %s available. Please choose the number of training pixels.\nRemaining Pixels will be used for validation.'%(numberDataPixels, labelByIndex[i])))
+		print 'c'
+		#x = int(raw_input('%i pixels for class %s available. Please choose the number of training pixels.\nRemaining Pixels will be used for validation.'%(numberDataPixels, labelByIndex[i])))
 		
 		# choose random numbers from 0 to numberDataPixels
 		# assign this part to training data
-		train_idx = np.random.choice(numberDataPixels, size= x, replace = False)
-		
+		train_idx = np.random.choice(numberDataPixels, size= 20000, replace = False)
+		train_idx = train_idx.tolist()
+		print 'd'
 		# create validation data indices
-		valid_list=[]
-		for i in range(0, len(numberDataPixels)):
+		valid_idx=[]
+		for i in range(0, numberDataPixels):
 			if i in train_idx:
 				continue
 			else:
-				valid_list.append(i)
-		valid_idx =  np.asarray(valid_list)
+				valid_idx.append(i)
+		print 'e'
+		for i in train_idx:
+			labeled_training[isData[0][i], isData[1][i]] += data[isData[0][i], isData[1][i]]
+		print 'f'
+		for i in valid_idx:
+			labeled_validation[isData[0][i], isData[1][i]] += data[isData[0][i], isData[1][i]]
+		train_idx = None
 		
-		labeled_training += data[isData[0][train_idx], isData[0][train_idx]]
-		
-		labeled_validation += data[isData[0][valid_idx], isData[0][valid_idx]]
-
 	return labeled_training, labeled_validation
