@@ -305,7 +305,6 @@ def rasterizeVectorData(vector_data_path, rasterized_data_path, cols, rows, geo_
 # load gt rasters into numpy stack
 ############################
 
-
 def loadRasters(rasterPath):
 	''' Load rasterized Ground truth data to numpy array
 	
@@ -326,7 +325,7 @@ def loadRasters(rasterPath):
 		# get raster metadata from first raster in list
 		if i == 0:
 			cols, rows, geo_transform, projection = getMeta(rasterPath + element)
-			labeled_pixels = np.zeros((rows, cols, len(os.listdir(rasterPath))))
+			labeled_pixels = np.zeros((rows, cols, len(os.listdir(rasterPath))), dtype = int)
 		
 		fn, ext = os.path.splitext(element)
 		
@@ -349,7 +348,6 @@ def loadRasters(rasterPath):
 	# labelByIndex --> nth array in third dimension corresponding to a certain class (!= array values corresponding to certain class)
 	return labeled_pixels, labelByIndex
 	
-
 ############################
 # create/process training/validation-data
 ############################
@@ -369,14 +367,15 @@ def createTrainingValidation(gtNumpyArray):
 		labeled_validation : 2D array with values corresponding to a certain class (= labels)
 	
 	based on https://www.machinalis.com/blog/python-for-geospatial-data-processing/
-		
+	
 	'''
 	
 	import numpy as np
 	
 	dim = gtNumpyArray.shape
-	labeled_training = np.zeros((dim[0], dim[1]))
-	labeled_validation = np.zeros((dim[0], dim[1]))
+	training = np.zeros((dim[0], dim[1]), dtype = int)
+	validation = np.zeros((dim[0], dim[1]), dtype = int)
+	
 	print 'created arrays'
 	
 	for i in range(0,dim[2]):
@@ -389,27 +388,38 @@ def createTrainingValidation(gtNumpyArray):
 		print 'b'
 		# extract first array from tuple, get length (== number of pixels that are nonzero)
 		numberDataPixels = isData[0].shape[0]
+		numberArray = np.arange(numberDataPixels)
+		
 		print 'c'
 		#x = int(raw_input('%i pixels for class %s available. Please choose the number of training pixels.\nRemaining Pixels will be used for validation.'%(numberDataPixels, labelByIndex[i])))
 		
 		# choose random numbers from 0 to numberDataPixels
 		# assign this part to training data
 		train_idx = np.random.choice(numberDataPixels, size= 20000, replace = False)
-		train_idx = train_idx.tolist()
-		print 'd'
-		# create validation data indices
-		valid_idx=[]
-		for i in range(0, numberDataPixels):
-			if i in train_idx:
-				continue
-			else:
-				valid_idx.append(i)
-		print 'e'
-		for i in train_idx:
-			labeled_training[isData[0][i], isData[1][i]] += data[isData[0][i], isData[1][i]]
-		print 'f'
-		for i in valid_idx:
-			labeled_validation[isData[0][i], isData[1][i]] += data[isData[0][i], isData[1][i]]
-		train_idx = None
 		
-	return labeled_training, labeled_validation
+		#train_idx = train_idx.tolist()
+		
+		print 'd'
+		
+		# create validation data indices
+		
+		mask_array = np.ones(numberDataPixels, dtype = int)
+		mask_array[train_idx] = 0
+		
+		isValid = np.nonzero(mask_array)
+		
+		valid_idx = numberArray[isValid]
+		
+		print 'e'
+		
+		xx = (np.asarray(isData[0][train_idx]), np.asarray(isData[1][train_idx]))
+		training[xx] += data[xx]
+		
+		print 'f'
+		
+		yy = (np.asarray(isData[0][valid_idx]), np.asarray(isData[1][valid_idx]))
+		validation[yy] += data[yy]
+		
+		train_idx, valid_idx = None, None
+		
+	return training, validation
