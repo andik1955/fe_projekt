@@ -66,7 +66,9 @@ def getMeta(pathToTile):
 	return ncols, nrows, geo_transform, projection
 
 
-
+############################
+# write array to geotiff
+############################
 
 
 def write_geotiff(fname, outFolder, data, geo_transform, projection):
