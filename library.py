@@ -270,7 +270,7 @@ def rasterizeVectorData(vector_data_path, rasterized_data_path, cols, rows, geo_
 	
 	gtRasters = []
 	labelByValue = {}
-	i = 1
+
 	for category in os.listdir(vector_data_path):
 		if category.endswith('.shp'):
 			print 'Rasterizing ', category, '...'
@@ -288,15 +288,15 @@ def rasterizeVectorData(vector_data_path, rasterized_data_path, cols, rows, geo_
 			band = target_ds.GetRasterBand(1)
 			band.SetNoDataValue(0)
 
-			
-			gdal.RasterizeLayer(target_ds, [1], layer, burn_values=[i])
+			bnValue = fn[-1:]
+			gdal.RasterizeLayer(target_ds, [1], layer, burn_values=bnValue)
 			
 			print 'Successfully rasterized ', fn +ext
 			
 			grid_path = rasterized_data_path + fn + '.tif'
 			gtRasters.append(grid_path)
-			labelByValue[i+1] = fn
-			i += 1
+			labelByValue[bnValue] = fn
+	
 	# labelByValue --> values in output raster corresponding to a certain class
 	return gtRasters, labelByValue
 
