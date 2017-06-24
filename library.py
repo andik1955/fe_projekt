@@ -36,10 +36,10 @@ def getAOI(pathToAoi):
 
 
 ############################
-# get tile metadata
+# get grid metadata
 ############################
 
-def getMeta(pathToTile):
+def getMeta(pathToGrid):
 	'''Function to retrieve metadata of a grid
 	
 	
@@ -55,12 +55,12 @@ def getMeta(pathToTile):
 	'''
 	from osgeo import gdal
 	
-	tile = gdal.Open(pathToTile)
+	grid = gdal.Open(pathToGrid)
 	
-	ncols = tile.RasterXSize
-	nrows = tile.RasterYSize
-	geo_transform = tile.GetGeoTransform()
-	projection = tile.GetProjection()
+	ncols = grid.RasterXSize
+	nrows = grid.RasterYSize
+	geo_transform = grid.GetGeoTransform()
+	projection = grid.GetProjection()
 	
 	
 	return ncols, nrows, geo_transform, projection
@@ -70,14 +70,10 @@ def getMeta(pathToTile):
 # write array to geotiff
 ############################
 
-
 def write_geotiff(fname, outFolder, data, geo_transform, projection):
-	'''Create a GeoTIFF file with the given data.
+	'''Create a GeoTIFF file with the given data.	
 	
-	
-	'''
-	
-	
+	'''	
 	
 	from osgeo import gdal
 	
@@ -90,25 +86,20 @@ def write_geotiff(fname, outFolder, data, geo_transform, projection):
 	dataset.SetProjection(projection)
 	band = dataset.GetRasterBand(1)
 	band.WriteArray(data)
-	dataset = None  # Close the file
-
-
+	dataset = None
 
 
 ############################
-# parse Satellite imagery to find matches with Shapefile boundaries
+# parse imagery and copy tiles that contain aoi boundary
 ############################
-
-
-
 
 def findImagery(pathToScenes, shapefileBoundaries=None, outFolder=None):
-	'''Function to retrieve Satellite imagery within AOI-boundaries and copy that to specified Folder
+	'''Function to retrieve Satellite imagery containing AOI and copy that to specified Folder
 	
 	
 	Args:
+		path to a folder that contains unzipped sentinel 2 imagery as downloaded
 		AOI Boundary as xMin, xMax, yMin, yMax tuple
-		path to a folder that contains sentinel 2 imagery as unzipped, as downloaded
 		path where output should be copied to
 	
 	Returns:
@@ -119,12 +110,8 @@ def findImagery(pathToScenes, shapefileBoundaries=None, outFolder=None):
 	import xml.etree.ElementTree as ET
 	from shutil import copytree
 	
-	# get single coordinates
-	# depends on structure of boundaries
 	xMin, xMax, yMin, yMax = shapefileBoundaries
-	
-	
-	
+		
 	if os.path.exists(outFolder):
 		print 'outFolder %s already exits. Script terminates.'%(outFolder)
 	else:
@@ -141,7 +128,6 @@ def findImagery(pathToScenes, shapefileBoundaries=None, outFolder=None):
 								fn, ext = os.path.splitext(element)
 								
 								if (ext == '.xml'):
-									#print element
 									tree = ET.parse(path+element)
 									root = tree.getroot()
 									for child in root:
@@ -159,12 +145,11 @@ def findImagery(pathToScenes, shapefileBoundaries=None, outFolder=None):
 															ULX = float(ulx.text)
 														for uly in geopos.findall('ULY'):
 															ULY = float(uly.text)
-													#print NCOLS, NROWS, ULX, ULY
-													# i = 1
+													
 													if(ULX < xMin and ULX+NCOLS*Cellsize > xMax and ULY > yMax and ULY-NROWS*Cellsize < yMin):
 														src = pathToScenes+scene+'/'+outerFolder+'/'+data+'/'+tile
 														dst = outFolder + '/' + tile
-														print src
+														print 'copy\n', src, '\nto\n', dst, '\n'
 														copytree(src, dst)
 														break
 
@@ -173,7 +158,7 @@ def findImagery(pathToScenes, shapefileBoundaries=None, outFolder=None):
 
 
 ############################
-# extract AOI on satellite imagery including resample process
+# clip imagery to AOI and resample coarse resolution bands
 ############################
 
 
@@ -188,9 +173,7 @@ def clipScenes(pathToScenes, aoiPath):
 	Returns:
 		Metadata for clipped 10m grid
 	
-	based on SAGA GIS -Tools and GDAl CMDs
-
-	
+	based on SAGA GIS -Tools and GDAl CMDs	
 		
 	'''
 	
@@ -206,23 +189,21 @@ def clipScenes(pathToScenes, aoiPath):
 				for band in os.listdir(pathToScenes+tile+'/'+imgFolder):
 					fn, ext = os.path.splitext(band)
 					
-					
-					
 					if ext == '.jp2':
-						print 'importing: ', pathToScenes+tile+'/'+imgFolder+'/'+band, '\n'
-						print 'clipping with: ', aoiPath, '\n'
-
+						
 						# create reference grid for resampling of coarse bands
 						if (k == 1):
 							os.system("saga_cmd io_gdal 0 -GRIDS %s -FILES %s -SELECTION 0 -TRANSFORM 0" % (pathToScenes+tile+'/'+imgFolder+'/'+'system'+'.sgrd', pathToScenes+tile+'/'+imgFolder+'/'+ fn[:-3] + 'B03' +'.jp2'))
 							k += 1
+							
+						print 'importing: ', pathToScenes+tile+'/'+imgFolder+'/'+band, '\n'
+						print 'clipping with: ', aoiPath, '\n'						
 
-						# SAGA-TOOLS start here
 						# import as sgrd
 						os.system("saga_cmd io_gdal 0 -GRIDS %s -FILES %s -SELECTION 0 -TRANSFORM 0" % (pathToScenes+tile+'/'+imgFolder+'/'+'TMP.sgrd', pathToScenes+tile+'/'+imgFolder+'/'+band))
 						
 						# resample resBands
-						# read grid system from band nr 3
+						# read grid system from band nr 3/system.sgrd
 						if fn.endswith(resBands):
 							#bandKey = fn[-3:]
 							os.system('saga_cmd grid_tools 0 -INPUT %s -OUTPUT %s -SCALE_UP 5 -TARGET_DEFINITION 1 -TARGET_TEMPLATE %s' % (pathToScenes+tile+'/'+imgFolder+'/'+'TMP.sgrd', pathToScenes+tile+'/'+imgFolder+'/'+'TMP.sgrd', pathToScenes+tile+'/'+imgFolder+'/'+'system'+'.sgrd'))
@@ -230,7 +211,6 @@ def clipScenes(pathToScenes, aoiPath):
 						# clip grids
 						os.system('saga_cmd grid_tools 31 -GRIDS %s -CLIPPED %s -EXTENT 2 -SHAPES %s' % (pathToScenes+tile+'/'+imgFolder+'/'+'TMP.sgrd', pathToScenes+tile+'/'+imgFolder+'/'+ fn + '.sgrd',  aoiPath))
 
-						
 						# export grids as geotiff
 						os.system('saga_cmd io_gdal 2 -GRIDS %s -FILE %s' % (pathToScenes+tile+'/'+imgFolder+'/'+ fn + '.sgrd', pathToScenes+tile+'/'+imgFolder+'/'+ fn + '.tif'))
 
@@ -253,6 +233,7 @@ def clipScenes(pathToScenes, aoiPath):
 				# clean *.mgrd files	
 				os.remove(pathToScenes+tile+'/'+imgFolder+'/'+ 'TMP.mgrd')
 				os.remove(pathToScenes+tile+'/'+imgFolder+'/'+ 'system.mgrd')
+				
 				# delete TMP.sgrds
 				print 'Delete files: ', pathToScenes+tile+'/'+imgFolder+'/'+ 'TMP.sdat', '\n'
 				os.system('gdalmanage delete %s'%(pathToScenes+tile+'/'+imgFolder+'/'+ 'TMP.sdat'))
@@ -260,8 +241,7 @@ def clipScenes(pathToScenes, aoiPath):
 				# delete system.sgrds
 				print 'Delete files: ', pathToScenes+tile+'/'+imgFolder+'/'+'system'+'.sdat', '\n'
 				os.system('gdalmanage delete %s'%(pathToScenes+tile+'/'+imgFolder+'/'+'system'+'.sdat'))
-				
-
+	
 	return metaData
 
 
@@ -271,12 +251,12 @@ def clipScenes(pathToScenes, aoiPath):
 ############################
 
 def rasterizeVectorData(vector_data_path, rasterized_data_path, cols, rows, geo_transform, projection):
-	'''Rasterize the given vector
+	'''Rasterize vector data in given directory
 	
 	Args
-		grid system/geo_transform/projection --> set to clipped s2 imagery (output of clipScenes)
 		path to directory containing each class as a single vector layer
 		path to output folder of rasterized layer
+		grid system/geo_transform/projection --> set to clipped s2 imagery (output of clipScenes)		
 	
 	takes a vector layer, rasterizes it and dumps it in the folder specified by rasterized_data_path
 	if vector layer is <wald.shp> then raster will be <wald.sgrd> in the given directory	
