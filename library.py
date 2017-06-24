@@ -306,34 +306,32 @@ def rasterizeVectorData(vector_data_path, rasterized_data_path, cols, rows, geo_
 ############################
 
 
-def loadRasters(rasterList):
+def loadRasters(rasterPath):
 	''' Load rasterized Ground truth data to numpy array
 	
 	Args
-		List with raster paths
-		for SAGA grids
+		path to directory with rasterized classes
 	
 	Assumes that each raster contains unique values for its class and that theses classes do not overlap
-	
-	
+		
 	'''
+	
 	import os
 	from osgeo import gdal
-	import numpy as np
-	
-	# get raster metadata from first raster in list
-	cols, rows, geo_transform, projection = getMeta(rasterList[0])
-	
-	labeled_pixels = np.zeros((rows, cols, len(rasterList)))
+	import numpy as np	
+
 	labelByIndex ={}
 	
-	for i, path in enumerate(rasterList):
+	for i, element in enumerate(os.listdir(rasterPath)):
+		# get raster metadata from first raster in list
+		if i == 0:
+			cols, rows, geo_transform, projection = getMeta(rasterPath + element)
+			labeled_pixels = np.zeros((rows, cols, len(os.listdir(rasterPath))))
 		
-		raster = os.path.basename(path)
-		fn, ext = os.path.splitext(raster)
+		fn, ext = os.path.splitext(element)
 		
-		grid = gdal.Open(path)
-		print 'gdal opened %s'%(raster)
+		grid = gdal.Open(rasterPath + element)
+		print 'gdal opened %s'%(element)
 
 		band = grid.GetRasterBand(1)
 		# band to array
@@ -341,7 +339,7 @@ def loadRasters(rasterList):
 		
 		# add band_array to numpy stack
 		labeled_pixels[:,:,i] = band_array
-		print 'added %s to numpy stack'%(raster)
+		print 'added %s to numpy stack'%(fn)
 		labelByIndex[i] = fn
 		
 		grid = None
