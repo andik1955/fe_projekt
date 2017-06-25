@@ -88,7 +88,23 @@ def write_geotiff(fname, outFolder, data, geo_transform, projection):
 	band.WriteArray(data)
 	dataset = None
 
+############################
+# get class values/labels
+############################	
 
+def getClassValue(pathToClasses):
+	''' Return class values/labels as dictionary
+	
+	'''
+	
+	import os
+	labelByValue = {}
+	for cl in os.listdir(pathToClasses):
+		fn, ext = os.path.splitext(cl)
+		labelByValue[fn[-1:]] = fn
+	
+	return labelByValue
+	
 ############################
 # parse imagery and copy tiles that contain aoi boundary
 ############################
