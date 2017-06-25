@@ -268,15 +268,17 @@ def rasterizeVectorData(vector_data_path, rasterized_data_path, cols, rows, geo_
 	from osgeo import gdal
 	import os
 	
-	gtRasters = []
 	labelByValue = {}
 
 	for category in os.listdir(vector_data_path):
 		if category.endswith('.shp'):
 			print 'Rasterizing ', category, '...'
+			
 			shape = vector_data_path + category
+			
 			data_source = gdal.OpenEx(shape, gdal.OF_VECTOR)
 			layer = data_source.GetLayer(0)
+			
 			# set driver of desired raster output format
 			driver = gdal.GetDriverByName('GTiff')
 			
@@ -284,21 +286,21 @@ def rasterizeVectorData(vector_data_path, rasterized_data_path, cols, rows, geo_
 			target_ds = driver.Create('%s%s.tif'%(rasterized_data_path, fn), cols, rows, 1, gdal.GDT_UInt16)
 			target_ds.SetGeoTransform(geo_transform)
 			target_ds.SetProjection(projection)
+			
 			# set noData value to 0
 			band = target_ds.GetRasterBand(1)
 			band.SetNoDataValue(0)
-
-			bnValue = fn[-1:]
-			gdal.RasterizeLayer(target_ds, [1], layer, burn_values=bnValue)
 			
+			# burn_values must be a sequence!
+			bnValue = int(fn[-1:])
+			
+			gdal.RasterizeLayer(target_ds, [1], layer, burn_values=[bnValue])
 			print 'Successfully rasterized ', fn +ext
 			
-			grid_path = rasterized_data_path + fn + '.tif'
-			gtRasters.append(grid_path)
 			labelByValue[bnValue] = fn
 	
 	# labelByValue --> values in output raster corresponding to a certain class
-	return gtRasters, labelByValue
+	return labelByValue
 
 
 ############################
@@ -347,7 +349,8 @@ def loadRasters(rasterPath):
 	
 	# labelByIndex --> nth array in third dimension corresponding to a certain class (!= array values corresponding to certain class)
 	return labeled_pixels, labelByIndex
-	
+
+
 ############################
 # create/process training/validation-data
 ############################
