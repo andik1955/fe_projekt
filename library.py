@@ -481,25 +481,35 @@ def wrapSVM(S2Data, projectFolder, cols, rows, geo_transform, projection, labele
 	clf = svm.SVC()
 	# train classifier
 	
-	
+	#######################################################
 	startClf = time.clock()
+	
 	clf.fit(training_samples, training_labels)
+	
 	difClf = time.clock() - startClf
 	difClfMin = int(difClf//60)
+	print difClfMin
 	difClfSec = int(difClf%60)
-	
+	print difClfSec
 	fobj.write("%s\n Training of classifier took %i min %i sec \n%s\n"%(50*'*', difClfMin, difClfSec, 50*'*'))
+	#######################################################
 	
 	n_samples = rows*cols
 	flat_pixels = S2Data.reshape((n_samples, 3))	
 	
+	#######################################################
 	startPred = time.clock()
+	
 	result = clf.predict(flat_pixels)
+	
 	difPred = time.clock() - startPred
 	difPredMin = int(difPred//60)
+	print difPredMin
 	difPredSec = int(difPred%60)
+	print difPredSec
 	
 	fobj.write("%s\n Prediciting the entire image took %i min %i sec \n%s\n"%(50*'*', difPredMin, difPredSec, 50*'*'))
+	#######################################################
 	
 	classification = result.reshape((rows, cols))
 	# write classification data
