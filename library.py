@@ -454,6 +454,7 @@ def wrapSVM(S2Data, projectFolder, cols, rows, geo_transform, projection, labele
 	'''
 	import os
 	import numpy as np
+	import time
 
 	os.mkdir('%strainPix%i'%(projectFolder, trainPixSize))
 	
@@ -479,11 +480,27 @@ def wrapSVM(S2Data, projectFolder, cols, rows, geo_transform, projection, labele
 
 	clf = svm.SVC()
 	# train classifier
+	
+	
+	startClf = time.clock()
 	clf.fit(training_samples, training_labels)
+	difClf = time.clock() - startClf
+	difClfMin = int(difClf//60)
+	difClfSec = int(difClf%60)
+	
+	fobj.write("%s\n Training of classifier took %i min %i sec \n%s\n"%(50*'*', difClfMin, difClfSec, 50*'*'))
 	
 	n_samples = rows*cols
-	flat_pixels = S2Data.reshape((n_samples, 3))
+	flat_pixels = S2Data.reshape((n_samples, 3))	
+	
+	startPred = time.clock()
 	result = clf.predict(flat_pixels)
+	difPred = time.clock() - startPred
+	difPredMin = int(difPred//60)
+	difPredSec = int(difPred%60)
+	
+	fobj.write("%s\n Prediciting the entire image took %i min %i sec \n%s\n"%(50*'*', difPredMin, difPredSec, 50*'*'))
+	
 	classification = result.reshape((rows, cols))
 	# write classification data
 	write_geotiff('SVM_%i_trainPix'%(trainPixSize), newPath, classification, geo_transform, projection)
@@ -507,3 +524,5 @@ def wrapSVM(S2Data, projectFolder, cols, rows, geo_transform, projection, labele
 	fobj.write("\n%s\nClassification accuracy (training data): %f" %  (50*'-',metrics.accuracy_score(training_labels, predicted_train)))
 	
 	fobj.close()
+	
+	return difClf, difPred
