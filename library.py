@@ -371,7 +371,7 @@ def loadRasters(rasterPath):
 # create/process training/validation-data
 ############################
 
-def createTrainingValidation(gtNumpyArray):
+def createTrainingValidation(gtNumpyArray, trainPixSize=100):
 	'''Function that creates
 		-a random subset of GroundTruth data for training
 		-a random subset of GroundTruth data for validation
@@ -414,7 +414,7 @@ def createTrainingValidation(gtNumpyArray):
 		
 		# choose random numbers from 0 to numberDataPixels
 		# assign this part to training data
-		train_idx = np.random.choice(numberDataPixels, size= 20000, replace = False)
+		train_idx = np.random.choice(numberDataPixels, size= trainPixSize, replace = False)
 		
 		#train_idx = train_idx.tolist()
 		
@@ -442,3 +442,68 @@ def createTrainingValidation(gtNumpyArray):
 		train_idx, valid_idx = None, None
 		
 	return training, validation
+
+	
+############################
+# wrapper for svm classifier
+############################
+
+def wrapSVM(S2Data, projectFolder, cols, rows, geo_transform, projection, labeled_pixels, trainPixSize, labelByValue):
+	''' Wrapper for SVM classification
+	
+	'''
+	import os
+	import numpy as np
+
+	os.mkdir('%strainPix%i'%(projectFolder, trainPixSize))
+	
+	newPath = projectFolder + 'trainPix' + str(trainPixSize) + '/'
+	
+	fobj = open("%slogfile.txt"%(newPath), "w")
+	
+	fobj.write("%s\nLogfile for SVM Processing of %i Trainingpixels\n%s\n"%(50*'*', trainPixSize, 50*'*'))
+	
+	labels_training, labels_validation = createTrainingValidation(labeled_pixels, trainPixSize)
+	
+	# write training and validation pixels
+	write_geotiff('training_areas', newPath, labels_training, geo_transform, projection)
+	write_geotiff('validation_areas', newPath, labels_validation, geo_transform, projection)
+	
+	idx_Train = np.nonzero(labels_training)
+	training_samples = S2Data[idx_Train[0], idx_Train[1]]
+	training_labels = labels_training[idx_Train]
+	
+	# Support Vector Machines
+	from sklearn import metrics
+	from sklearn import svm
+
+	clf = svm.SVC()
+	# train classifier
+	clf.fit(training_samples, training_labels)
+	
+	n_samples = rows*cols
+	flat_pixels = S2Data.reshape((n_samples, 3))
+	result = clf.predict(flat_pixels)
+	classification = result.reshape((rows, cols))
+	# write classification data
+	write_geotiff('SVM_%i_trainPix'%(trainPixSize), newPath, classification, geo_transform, projection)
+	
+	idx_Val = np.nonzero(labels_validation)
+	predicted_val = classification[idx_Val]
+	validation_labels = labels_validation[idx_Val]
+
+	predicted_train = classification[idx_Train]
+	
+	fobj.write("\n%s\nConfusion matrix (validation data):\n\n%s\n" % (50*'-', metrics.confusion_matrix(validation_labels, predicted_val)))
+	
+	fobj.write("\n%s\nConfusion matrix (training data):\n\n%s\n" % (50*'-', metrics.confusion_matrix(training_labels, predicted_train)))
+	
+	
+	target_names = ['Class %s' % s for s in labelByValue.values()]
+	fobj.write("\n%s\nClassification report (validation data):\n%s" %  (50*'-', metrics.classification_report(validation_labels, predicted_val, target_names=target_names)))
+	
+	fobj.write("\n%s\nClassification accuracy (validation data): %f" %  (50*'-',metrics.accuracy_score(validation_labels, predicted_val)))
+	
+	fobj.write("\n%s\nClassification accuracy (training data): %f" %  (50*'-',metrics.accuracy_score(training_labels, predicted_train)))
+	
+	fobj.close()
