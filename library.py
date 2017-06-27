@@ -395,32 +395,19 @@ def createTrainingValidation(gtNumpyArray, trainPixSize=100):
 	training = np.zeros((dim[0], dim[1]), dtype = int)
 	validation = np.zeros((dim[0], dim[1]), dtype = int)
 	
-	print 'created arrays'
 	
 	for i in range(0,dim[2]):
-		print 'started loop'
 		data = gtNumpyArray[:,:,i]
-		print 'a'
 		
 		# tuple of indexes where array is nonzero
 		isData = np.nonzero(data)
-		print 'b'
 		# extract first array from tuple, get length (== number of pixels that are nonzero)
 		numberDataPixels = isData[0].shape[0]
 		numberArray = np.arange(numberDataPixels)
 		
-		print 'c'
-		#x = int(raw_input('%i pixels for class %s available. Please choose the number of training pixels.\nRemaining Pixels will be used for validation.'%(numberDataPixels, labelByIndex[i])))
-		
 		# choose random numbers from 0 to numberDataPixels
 		# assign this part to training data
 		train_idx = np.random.choice(numberDataPixels, size= trainPixSize, replace = False)
-		
-		#train_idx = train_idx.tolist()
-		
-		print 'd'
-		
-		# create validation data indices
 		
 		mask_array = np.ones(numberDataPixels, dtype = int)
 		mask_array[train_idx] = 0
@@ -429,12 +416,8 @@ def createTrainingValidation(gtNumpyArray, trainPixSize=100):
 		
 		valid_idx = numberArray[isValid]
 		
-		print 'e'
-		
 		xx = (np.asarray(isData[0][train_idx]), np.asarray(isData[1][train_idx]))
 		training[xx] += data[xx]
-		
-		print 'f'
 		
 		yy = (np.asarray(isData[0][valid_idx]), np.asarray(isData[1][valid_idx]))
 		validation[yy] += data[yy]
@@ -443,6 +426,54 @@ def createTrainingValidation(gtNumpyArray, trainPixSize=100):
 		
 	return training, validation
 
+
+
+
+
+############################
+# load Data to classify
+############################
+
+
+def loadS2(pathToScenes, cols, rows):
+	'''Function to load multitemporal S2 Data
+	
+	
+	Args:
+		path to a folder that contains sentinel 2 tiles that overlap shapefileBoundaries
+	
+	Returns:
+		numpy array with every band
+	
+		
+	'''
+	
+	import os
+	import numpy as np
+	from osgeo import gdal
+	
+	certainBand = ('02', '03', '04', '08', '11', '12', '10')	
+	
+	bandList = []
+
+	for tile in os.listdir(pathToScenes):
+		for imgFolder in os.listdir(pathToScenes+tile):
+			if imgFolder == 'IMG_DATA':
+				for band in os.listdir(pathToScenes+tile+'/'+imgFolder):
+					fn, ext = os.path.splitext(band)
+					if fn.endswith(certainBand):
+						grid = gdal.Open(pathToScenes+tile+'/'+imgFolder+'/'+ fn + '.tif')
+						band = grid.GetRasterBand(1)
+						# band to array
+						band_array = band.ReadAsArray()
+						bandList.append(band_array)
+						grid, band, band_array = None, None, None
+	
+	data = np.dstack(bandList)
+	print 'Successfully loaded S2Data'
+	return data
+
+
 	
 ############################
 # wrapper for svm classifier
@@ -450,15 +481,25 @@ def createTrainingValidation(gtNumpyArray, trainPixSize=100):
 
 def wrapSVM(S2Data, projectFolder, cols, rows, geo_transform, projection, labeled_pixels, trainPixSize, labelByValue):
 	''' Wrapper for SVM classification
+
+
+
+	-overwrites existing output directory
+
 	
 	'''
 	import os
+	import shutil
 	import numpy as np
 	import time
 
-	os.mkdir('%strainPix%i'%(projectFolder, trainPixSize))
-	
+
 	newPath = projectFolder + 'trainPix' + str(trainPixSize) + '/'
+	
+	if os.path.exists(newPath):
+		shutil.rmtree(newPath)
+
+	os.mkdir('%strainPix%i'%(projectFolder, trainPixSize))
 	
 	fobj = open("%slogfile.txt"%(newPath), "w")
 	
@@ -536,3 +577,113 @@ def wrapSVM(S2Data, projectFolder, cols, rows, geo_transform, projection, labele
 	fobj.close()
 	
 	return difClf, difPred
+	
+	
+	
+############################
+# test svm Parameters C and sigma
+############################
+
+def svmParam(S2Data, projectFolder, cols, rows, geo_transform, projection, labeled_pixels, labelByValue, cList):
+	''' Check C and sigma of SVM classification on 1000 training pixels per class
+
+	Args
+		same as in wrapSVM except or training Pixel Number (set to 1000 per class)
+		List with values for c and sigma
+
+	-overwrites existing output directory
+
+	
+	'''
+	
+	import os
+	import shutil
+	import numpy as np
+	import time
+	from sklearn import metrics
+	from sklearn import svm
+	
+	trainPixSize = 2000
+	
+	dimensions = S2Data.shape[2]
+	
+	newPath = projectFolder + 'svmParameterTest' + '/'
+	
+	os.mkdir('%ssvmParameterTest'%(projectFolder))	
+	
+	fobjTime = open("%sprocessingTime.txt"%(newPath), "w")
+	fobjTime.write('C\ttimeToFit\ttimeToPredict\taccuracyScore\n')
+	
+	fobj = open("%slogfile.txt"%(newPath), "w")	
+	fobj.write("%s\nLogfile for SVM Processing of %i Trainingpixels\n%s\n"%(50*'*', trainPixSize, 50*'*'))
+	
+	labels_training, labels_validation = createTrainingValidation(labeled_pixels, trainPixSize)
+	
+	# write training and validation pixels
+	write_geotiff('training_areas', newPath, labels_training, geo_transform, projection)
+	write_geotiff('validation_areas', newPath, labels_validation, geo_transform, projection)
+	
+	n_samples = rows*cols
+	flat_pixels = S2Data.reshape((n_samples, dimensions))
+	
+	idx_Train = np.nonzero(labels_training)
+	training_samples = S2Data[idx_Train[0], idx_Train[1]]
+	training_labels = labels_training[idx_Train]
+	
+	for i in cList:
+		clf = svm.LinearSVC(C = i)
+		
+		fobj.write("%s\nRun with C = %f \n%s\n"%(50*'*', i, 50*'*'))
+		
+	
+		#######################################################
+		startClf = time.clock()
+		
+		clf.fit(training_samples, training_labels)
+		
+		difClf = time.clock() - startClf
+		difClfMin = int(difClf//60)
+		difClfSec = int(difClf%60)
+
+		fobj.write("%s\n Training of classifier took %i min %i sec \n%s\n"%(50*'-', difClfMin, difClfSec, 50*'-'))
+		#######################################################
+		
+		startPred = time.clock()
+		
+		result = clf.predict(flat_pixels)
+		
+		difPred = time.clock() - startPred
+		difPredMin = int(difPred//60)
+		difPredSec = int(difPred%60)
+		
+		fobj.write("%s\n Prediciting the entire image took %i min %i sec \n%s\n"%(50*'-', difPredMin, difPredSec, 50*'-'))
+		#######################################################
+		
+		classification = result.reshape((rows, cols))
+		# write classification data
+		write_geotiff('LinearSVM_C%1.2f'%(i), newPath, classification, geo_transform, projection)
+		
+		idx_Val = np.nonzero(labels_validation)
+		predicted_val = classification[idx_Val]
+		validation_labels = labels_validation[idx_Val]
+	
+		predicted_train = classification[idx_Train]
+		
+		fobj.write("\n%s\nConfusion matrix (validation data):\n\n%s\n" % (50*'-', metrics.confusion_matrix(validation_labels, predicted_val)))
+		
+		#fobj.write("\n%s\nConfusion matrix (training data):\n\n%s\n" % (50*'-', metrics.confusion_matrix(training_labels, predicted_train)))
+		
+		
+		target_names = ['Class %s' % s for s in labelByValue.values()]
+		fobj.write("\n%s\nClassification report (validation data):\n%s" %  (50*'-', metrics.classification_report(validation_labels, predicted_val, target_names=target_names)))
+		
+		a = metrics.accuracy_score(validation_labels, predicted_val)
+		fobj.write("\n%s\nClassification accuracy (validation data): %f\n\n" %  (50*'-', a))
+		
+		#fobj.write("\n%s\nClassification accuracy (training data): %f" %  (50*'-',metrics.accuracy_score(training_labels, predicted_train)))
+
+		fobjTime.write('%f\t%f\t%f\t%f\n'%(i, difClf, difPred, a))
+			
+	fobj.close()
+	fobjTime.close()
+	print 'finished Parameter check'
