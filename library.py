@@ -482,13 +482,18 @@ def loadS2(pathToScenes, cols, rows):
 def wrapSVM(S2Data, projectFolder, cols, rows, geo_transform, projection, labeled_pixels, trainPixList, labelByValue):
 	''' Wrapper for SVM classification
 
-	-overwrites existing output directory
+	test several sample sizes
 	
 	'''
 	import os
 	import numpy as np
 	import time
 	from datetime import datetime
+	
+	dimensions = S2Data.shape[2]
+	
+	n_samples = rows*cols
+	flat_pixels = S2Data.reshape((n_samples, dimensions))
 	
 	c = 1.0
 	
@@ -507,7 +512,7 @@ def wrapSVM(S2Data, projectFolder, cols, rows, geo_transform, projection, labele
 	fobjTime.write('nrTrainPix\ttimeToFit\ttimeToPredict\taccuracyScore\n')
 	
 	fobj = open("%slogfile.txt"%(newPath), "w")
-	fobj.write("%s\nLogfile for LinearSVM Processing of %i Trainingpixels and C = %1.2f\n%s\n"%(50*'*', trainPixList, c, 50*'*'))
+	
 		
 	# Support Vector Machines
 	from sklearn import metrics
@@ -516,6 +521,7 @@ def wrapSVM(S2Data, projectFolder, cols, rows, geo_transform, projection, labele
 	clf = svm.LinearSVC(C = c)
 	
 	for i in trainPixList:
+		fobj.write("%s\nLogfile for LinearSVM Processing of %i Trainingpixels and C = %1.2f\n%s\n"%(50*'*', i, c, 50*'*'))
 		labels_training, labels_validation = createTrainingValidation(labeled_pixels, i)
 		
 		# write training and validation pixels
@@ -537,10 +543,6 @@ def wrapSVM(S2Data, projectFolder, cols, rows, geo_transform, projection, labele
 		print difClfSec
 		fobj.write("%s\n Training of classifier took %i min %i sec \n%s\n"%(50*'*', difClfMin, difClfSec, 50*'*'))
 		#######################################################
-		
-		n_samples = rows*cols
-		flat_pixels = S2Data.reshape((n_samples, 3))	
-		
 		#######################################################
 		startPred = time.clock()
 		
@@ -586,15 +588,15 @@ def wrapSVM(S2Data, projectFolder, cols, rows, geo_transform, projection, labele
 	
 	
 ############################
-# test svm Parameters C and sigma
+# test svm Parameters C
 ############################
 
 def svmParam(S2Data, projectFolder, cols, rows, geo_transform, projection, labeled_pixels, trainPixNr, labelByValue, cList):
-	''' Check C and sigma of SVM classification on 1000 training pixels per class
+	''' Check C SVM classification on specified number of training pixels per class
 
 	Args
 		same as in wrapSVM except or training Pixel Number (set to 1000 per class)
-		List with values for c and sigma
+		List with values for c
 
 	-overwrites existing output directory
 
