@@ -595,7 +595,7 @@ def svmParam(S2Data, projectFolder, cols, rows, geo_transform, projection, label
 	''' Check C SVM classification on specified number of training pixels per class
 
 	Args
-		same as in wrapSVM except or training Pixel Number (set to 1000 per class)
+		same as in wrapSVM except for training Pixel Number (set by trainPixNr)
 		List with values for c
 
 	-overwrites existing output directory
