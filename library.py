@@ -476,10 +476,10 @@ def loadS2(pathToScenes, cols, rows):
 
 	
 ############################
-# wrapper for svm classifier
+# wrapper for LinearSVM classifier
 ############################
 
-def wrapSVM(S2Data, projectFolder, cols, rows, geo_transform, projection, labeled_pixels, trainPixSize, labelByValue):
+def wrapSVM(S2Data, projectFolder, cols, rows, geo_transform, projection, labeled_pixels, trainPixList, labelByValue):
 	''' Wrapper for SVM classification
 
 
@@ -489,90 +489,87 @@ def wrapSVM(S2Data, projectFolder, cols, rows, geo_transform, projection, labele
 	
 	'''
 	import os
-	import shutil
 	import numpy as np
 	import time
 
+	newPath = projectFolder + 'sampleSizeTest' + '/'
 
-	newPath = projectFolder + 'trainPix' + str(trainPixSize) + '/'
-	
-	if os.path.exists(newPath):
-		shutil.rmtree(newPath)
-
-	os.mkdir('%strainPix%i'%(projectFolder, trainPixSize))
+	os.mkdir('%s'%(newPath))
 	
 	fobj = open("%slogfile.txt"%(newPath), "w")
 	
 	fobj.write("%s\nLogfile for SVM Processing of %i Trainingpixels\n%s\n"%(50*'*', trainPixSize, 50*'*'))
-	
-	labels_training, labels_validation = createTrainingValidation(labeled_pixels, trainPixSize)
-	
-	# write training and validation pixels
-	write_geotiff('training_areas', newPath, labels_training, geo_transform, projection)
-	write_geotiff('validation_areas', newPath, labels_validation, geo_transform, projection)
-	
-	idx_Train = np.nonzero(labels_training)
-	training_samples = S2Data[idx_Train[0], idx_Train[1]]
-	training_labels = labels_training[idx_Train]
-	
+		
 	# Support Vector Machines
 	from sklearn import metrics
 	from sklearn import svm
 
-	clf = svm.SVC()
-	# train classifier
+	clf = svm.LinearSVC(C = 1.0)
 	
-	#######################################################
-	startClf = time.clock()
-	
-	clf.fit(training_samples, training_labels)
-	
-	difClf = time.clock() - startClf
-	difClfMin = int(difClf//60)
-	print difClfMin
-	difClfSec = int(difClf%60)
-	print difClfSec
-	fobj.write("%s\n Training of classifier took %i min %i sec \n%s\n"%(50*'*', difClfMin, difClfSec, 50*'*'))
-	#######################################################
-	
-	n_samples = rows*cols
-	flat_pixels = S2Data.reshape((n_samples, 3))	
-	
-	#######################################################
-	startPred = time.clock()
-	
-	result = clf.predict(flat_pixels)
-	
-	difPred = time.clock() - startPred
-	difPredMin = int(difPred//60)
-	print difPredMin
-	difPredSec = int(difPred%60)
-	print difPredSec
-	
-	fobj.write("%s\n Prediciting the entire image took %i min %i sec \n%s\n"%(50*'*', difPredMin, difPredSec, 50*'*'))
-	#######################################################
-	
-	classification = result.reshape((rows, cols))
-	# write classification data
-	write_geotiff('SVM_%i_trainPix'%(trainPixSize), newPath, classification, geo_transform, projection)
-	
-	idx_Val = np.nonzero(labels_validation)
-	predicted_val = classification[idx_Val]
-	validation_labels = labels_validation[idx_Val]
 
-	predicted_train = classification[idx_Train]
-	
-	fobj.write("\n%s\nConfusion matrix (validation data):\n\n%s\n" % (50*'-', metrics.confusion_matrix(validation_labels, predicted_val)))
-	
-	fobj.write("\n%s\nConfusion matrix (training data):\n\n%s\n" % (50*'-', metrics.confusion_matrix(training_labels, predicted_train)))
 	
 	
-	target_names = ['Class %s' % s for s in labelByValue.values()]
-	fobj.write("\n%s\nClassification report (validation data):\n%s" %  (50*'-', metrics.classification_report(validation_labels, predicted_val, target_names=target_names)))
-	
-	fobj.write("\n%s\nClassification accuracy (validation data): %f" %  (50*'-',metrics.accuracy_score(validation_labels, predicted_val)))
-	
-	fobj.write("\n%s\nClassification accuracy (training data): %f" %  (50*'-',metrics.accuracy_score(training_labels, predicted_train)))
+	for i in trainPixList:
+		labels_training, labels_validation = createTrainingValidation(labeled_pixels, trainPixSize)
+		
+		# write training and validation pixels
+		write_geotiff('training_areas', newPath, labels_training, geo_transform, projection)
+		write_geotiff('validation_areas', newPath, labels_validation, geo_transform, projection)
+		
+		idx_Train = np.nonzero(labels_training)
+		training_samples = S2Data[idx_Train[0], idx_Train[1]]
+		training_labels = labels_training[idx_Train]
+		
+			#######################################################
+		startClf = time.clock()
+		clf.fit(training_samples, training_labels)
+		
+		difClf = time.clock() - startClf
+		difClfMin = int(difClf//60)
+		print difClfMin
+		difClfSec = int(difClf%60)
+		print difClfSec
+		fobj.write("%s\n Training of classifier took %i min %i sec \n%s\n"%(50*'*', difClfMin, difClfSec, 50*'*'))
+		#######################################################
+		
+		n_samples = rows*cols
+		flat_pixels = S2Data.reshape((n_samples, 3))	
+		
+		#######################################################
+		startPred = time.clock()
+		
+		result = clf.predict(flat_pixels)
+		
+		difPred = time.clock() - startPred
+		difPredMin = int(difPred//60)
+		print difPredMin
+		difPredSec = int(difPred%60)
+		print difPredSec
+		
+		fobj.write("%s\n Prediciting the entire image took %i min %i sec \n%s\n"%(50*'*', difPredMin, difPredSec, 50*'*'))
+		#######################################################
+		
+		classification = result.reshape((rows, cols))
+		# write classification data
+		write_geotiff('SVM_%i_trainPix'%(trainPixSize), newPath, classification, geo_transform, projection)
+		
+		idx_Val = np.nonzero(labels_validation)
+		predicted_val = classification[idx_Val]
+		validation_labels = labels_validation[idx_Val]
+
+		predicted_train = classification[idx_Train]
+		
+		fobj.write("\n%s\nConfusion matrix (validation data):\n\n%s\n" % (50*'-', metrics.confusion_matrix(validation_labels, predicted_val)))
+		
+		fobj.write("\n%s\nConfusion matrix (training data):\n\n%s\n" % (50*'-', metrics.confusion_matrix(training_labels, predicted_train)))
+		
+		
+		target_names = ['Class %s' % s for s in labelByValue.values()]
+		fobj.write("\n%s\nClassification report (validation data):\n%s" %  (50*'-', metrics.classification_report(validation_labels, predicted_val, target_names=target_names)))
+		
+		fobj.write("\n%s\nClassification accuracy (validation data): %f" %  (50*'-',metrics.accuracy_score(validation_labels, predicted_val)))
+		
+		fobj.write("\n%s\nClassification accuracy (training data): %f" %  (50*'-',metrics.accuracy_score(training_labels, predicted_train)))
 	
 	fobj.close()
 	
@@ -597,7 +594,6 @@ def svmParam(S2Data, projectFolder, cols, rows, geo_transform, projection, label
 	'''
 	
 	import os
-	import shutil
 	import numpy as np
 	import time
 	from sklearn import metrics
@@ -631,12 +627,11 @@ def svmParam(S2Data, projectFolder, cols, rows, geo_transform, projection, label
 	training_labels = labels_training[idx_Train]
 	
 	for i in cList:
-		clf = svm.LinearSVC(C = i)
-		
+		clf = svm.LinearSVC(C = i)		
 		fobj.write("%s\nRun with C = %f \n%s\n"%(50*'*', i, 50*'*'))
 		
 	
-		#######################################################
+		##########################################################################################################################
 		startClf = time.clock()
 		
 		clf.fit(training_samples, training_labels)
@@ -646,8 +641,8 @@ def svmParam(S2Data, projectFolder, cols, rows, geo_transform, projection, label
 		difClfSec = int(difClf%60)
 
 		fobj.write("%s\n Training of classifier took %i min %i sec \n%s\n"%(50*'-', difClfMin, difClfSec, 50*'-'))
-		#######################################################
-		
+		##########################################################################################################################
+		##########################################################################################################################
 		startPred = time.clock()
 		
 		result = clf.predict(flat_pixels)
@@ -657,7 +652,7 @@ def svmParam(S2Data, projectFolder, cols, rows, geo_transform, projection, label
 		difPredSec = int(difPred%60)
 		
 		fobj.write("%s\n Prediciting the entire image took %i min %i sec \n%s\n"%(50*'-', difPredMin, difPredSec, 50*'-'))
-		#######################################################
+		##########################################################################################################################
 		
 		classification = result.reshape((rows, cols))
 		# write classification data
