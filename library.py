@@ -482,45 +482,46 @@ def loadS2(pathToScenes, cols, rows):
 def wrapSVM(S2Data, projectFolder, cols, rows, geo_transform, projection, labeled_pixels, trainPixList, labelByValue):
 	''' Wrapper for SVM classification
 
-
-
 	-overwrites existing output directory
-
 	
 	'''
 	import os
 	import numpy as np
 	import time
+	from datetime import datetime
+	
+	c = 1.0
+	
+	dt = datetime.utcnow()	
 
-	newPath = projectFolder + 'sampleSizeTest' + '/'
+	newPath = projectFolder + dt.year + dt.month + dt.day + '_' + dt.hour + dt.minute + 'UTC_' + 'sampleSizeTest' + '/'
 
 	os.mkdir('%s'%(newPath))
 	
-	fobj = open("%slogfile.txt"%(newPath), "w")
+	fobjTime = open("%sprocessingTime.txt"%(newPath), "w")
+	fobjTime.write('nrTrainPix\ttimeToFit\ttimeToPredict\taccuracyScore\n')
 	
-	fobj.write("%s\nLogfile for SVM Processing of %i Trainingpixels\n%s\n"%(50*'*', trainPixSize, 50*'*'))
+	fobj = open("%slogfile.txt"%(newPath), "w")
+	fobj.write("%s\nLogfile for LinearSVM Processing of %i Trainingpixels and C = %1.2f\n%s\n"%(50*'*', trainPixList, c, 50*'*'))
 		
 	# Support Vector Machines
 	from sklearn import metrics
 	from sklearn import svm
 
-	clf = svm.LinearSVC(C = 1.0)
-	
-
-	
+	clf = svm.LinearSVC(C = c)
 	
 	for i in trainPixList:
-		labels_training, labels_validation = createTrainingValidation(labeled_pixels, trainPixSize)
+		labels_training, labels_validation = createTrainingValidation(labeled_pixels, i)
 		
 		# write training and validation pixels
-		write_geotiff('training_areas', newPath, labels_training, geo_transform, projection)
-		write_geotiff('validation_areas', newPath, labels_validation, geo_transform, projection)
+		write_geotiff('training_areas_%ipixPerClass'%(i), newPath, labels_training, geo_transform, projection)
+		write_geotiff('validation_areas_%ipixPerClassTrain'%(i), newPath, labels_validation, geo_transform, projection)
 		
 		idx_Train = np.nonzero(labels_training)
 		training_samples = S2Data[idx_Train[0], idx_Train[1]]
 		training_labels = labels_training[idx_Train]
 		
-			#######################################################
+		#######################################################
 		startClf = time.clock()
 		clf.fit(training_samples, training_labels)
 		
@@ -551,7 +552,7 @@ def wrapSVM(S2Data, projectFolder, cols, rows, geo_transform, projection, labele
 		
 		classification = result.reshape((rows, cols))
 		# write classification data
-		write_geotiff('SVM_%i_trainPix'%(trainPixSize), newPath, classification, geo_transform, projection)
+		write_geotiff('LinearSVM_%i_trainPix'%(i), newPath, classification, geo_transform, projection)
 		
 		idx_Val = np.nonzero(labels_validation)
 		predicted_val = classification[idx_Val]
@@ -567,14 +568,16 @@ def wrapSVM(S2Data, projectFolder, cols, rows, geo_transform, projection, labele
 		target_names = ['Class %s' % s for s in labelByValue.values()]
 		fobj.write("\n%s\nClassification report (validation data):\n%s" %  (50*'-', metrics.classification_report(validation_labels, predicted_val, target_names=target_names)))
 		
-		fobj.write("\n%s\nClassification accuracy (validation data): %f" %  (50*'-',metrics.accuracy_score(validation_labels, predicted_val)))
+		a = metrics.accuracy_score(validation_labels, predicted_val)
+		fobj.write("\n%s\nClassification accuracy (validation data): %f" %  (50*'-', a))
 		
 		fobj.write("\n%s\nClassification accuracy (training data): %f" %  (50*'-',metrics.accuracy_score(training_labels, predicted_train)))
-	
+		
+		fobjTime.write('%i\t%f\t%f\t%f\n'%(i, difClf, difPred, a))
+		
 	fobj.close()
-	
-	return difClf, difPred
-	
+	fobjTime.close()
+	print 'finished Training Pixel Variation'	
 	
 	
 ############################
@@ -596,6 +599,7 @@ def svmParam(S2Data, projectFolder, cols, rows, geo_transform, projection, label
 	import os
 	import numpy as np
 	import time
+	from datetime import datetime
 	from sklearn import metrics
 	from sklearn import svm
 	
@@ -603,15 +607,17 @@ def svmParam(S2Data, projectFolder, cols, rows, geo_transform, projection, label
 	
 	dimensions = S2Data.shape[2]
 	
-	newPath = projectFolder + 'svmParameterTest' + '/'
+	dt = datetime.utcnow()	
+
+	newPath = projectFolder + dt.year + dt.month + dt.day + '_' + dt.hour + dt.minute + 'UTC_' + 'svmParameterTest' + '/'
 	
-	os.mkdir('%ssvmParameterTest'%(projectFolder))	
+	os.mkdir('%s'%(newPath))	
 	
 	fobjTime = open("%sprocessingTime.txt"%(newPath), "w")
 	fobjTime.write('C\ttimeToFit\ttimeToPredict\taccuracyScore\n')
 	
 	fobj = open("%slogfile.txt"%(newPath), "w")	
-	fobj.write("%s\nLogfile for SVM Processing of %i Trainingpixels\n%s\n"%(50*'*', trainPixSize, 50*'*'))
+	fobj.write("%s\nLogfile for LinearSVC Processing of %i Trainingpixels\n%s\n"%(50*'*', trainPixSize, 50*'*'))
 	
 	labels_training, labels_validation = createTrainingValidation(labeled_pixels, trainPixSize)
 	
