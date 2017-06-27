@@ -492,9 +492,14 @@ def wrapSVM(S2Data, projectFolder, cols, rows, geo_transform, projection, labele
 	
 	c = 1.0
 	
-	dt = datetime.utcnow()	
+	dt = datetime.utcnow()
+	
+	month = '%02d'%(dt.month)
+	day = '%02d'%(dt.day)
+	hour = '%02d'%(dt.hour)
+	minute = '%02d'%(dt.minute)
 
-	newPath = projectFolder + dt.year + dt.month + dt.day + '_' + dt.hour + dt.minute + 'UTC_' + 'sampleSizeTest' + '/'
+	newPath = projectFolder + str(dt.year) + month + day + '_' + hour + minute + 'UTC_' + 'sampleSizeTest' + '/'
 
 	os.mkdir('%s'%(newPath))
 	
@@ -584,7 +589,7 @@ def wrapSVM(S2Data, projectFolder, cols, rows, geo_transform, projection, labele
 # test svm Parameters C and sigma
 ############################
 
-def svmParam(S2Data, projectFolder, cols, rows, geo_transform, projection, labeled_pixels, labelByValue, cList):
+def svmParam(S2Data, projectFolder, cols, rows, geo_transform, projection, labeled_pixels, trainPixNr, labelByValue, cList):
 	''' Check C and sigma of SVM classification on 1000 training pixels per class
 
 	Args
@@ -603,13 +608,17 @@ def svmParam(S2Data, projectFolder, cols, rows, geo_transform, projection, label
 	from sklearn import metrics
 	from sklearn import svm
 	
-	trainPixSize = 2000
+	trainPixSize = trainPixNr
 	
 	dimensions = S2Data.shape[2]
 	
-	dt = datetime.utcnow()	
-
-	newPath = projectFolder + dt.year + dt.month + dt.day + '_' + dt.hour + dt.minute + 'UTC_' + 'svmParameterTest' + '/'
+	dt = datetime.utcnow()
+	month = '%02d'%(dt.month)
+	day = '%02d'%(dt.day)
+	hour = '%02d'%(dt.hour)
+	minute = '%02d'%(dt.minute)
+	
+	newPath = projectFolder + str(dt.year) + month + day + '_' + hour + minute + 'UTC_' + 'svmParameterTest' + '/'
 	
 	os.mkdir('%s'%(newPath))	
 	
