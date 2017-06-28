@@ -71,7 +71,7 @@ def getMeta(pathToGrid):
 ############################
 
 def write_geotiff(fname, outFolder, data, geo_transform, projection):
-	'''Create a GeoTIFF file with the given data.	
+	'''Create a GeoTIFF file with the given data/numpy array	
 	
 	'''	
 	
@@ -179,7 +179,7 @@ def findImagery(pathToScenes, shapefileBoundaries=None, outFolder=None):
 
 
 def clipScenes(pathToScenes, aoiPath):
-	'''Function to clip Satellite imagery to AOI-boundaries and clean up folder
+	'''Function to clip Satellite imagery to AOI-boundaries, resample bands to 10m/Band3 resolution and clean up folder
 	
 	
 	Args:
@@ -194,7 +194,7 @@ def clipScenes(pathToScenes, aoiPath):
 	'''
 	
 	import os
-	
+	# bands that need resampling
 	resBands = ('B05', 'B06', 'B07', 'B8A', 'B11', 'B12', 'B01', 'B09', 'B10')
 
 	i = 1
@@ -272,13 +272,13 @@ def rasterizeVectorData(vector_data_path, rasterized_data_path, cols, rows, geo_
 	Args
 		path to directory containing each class as a single vector layer
 		path to output folder of rasterized layer
-		grid system/geo_transform/projection --> set to clipped s2 imagery (output of clipScenes)		
+		grid system/geo_transform/projection --> set to output of clipScenes)		
 	
 	takes a vector layer, rasterizes it and dumps it in the folder specified by rasterized_data_path
-	if vector layer is <wald.shp> then raster will be <wald.sgrd> in the given directory	
-	a different raster format could be specified by driver (-->also file extension in driver.Create)
+	if vector layer is <wald_1.shp> then raster will be <wald_1.tif> in the given directory	
+	a different raster format could be specified by driver (also change file extension in driver.Create)
 
-	returns dictionary with values corresponding to a class
+	returns dictionary with values corresponding to a class as key
 	
 	'''
 	from osgeo import gdal
@@ -343,6 +343,7 @@ def loadRasters(rasterPath):
 		# get raster metadata from first raster in list
 		if i == 0:
 			cols, rows, geo_transform, projection = getMeta(rasterPath + element)
+			# specify desired datatype...
 			labeled_pixels = np.zeros((rows, cols, len(os.listdir(rasterPath))), dtype = int)
 		
 		fn, ext = os.path.splitext(element)
@@ -375,7 +376,7 @@ def createTrainingValidation(gtNumpyArray, trainPixSize=100):
 	'''Function that creates
 		-a random subset of GroundTruth data for training
 		-a random subset of GroundTruth data for validation
-		-choose sampla size of training and validation data
+		-choose sample size of training data, default = 100 pixel
 	
 	Args:
 		ground truth data in form of a numpy array, each band in 3rd dimension corresponds to a class
@@ -409,6 +410,7 @@ def createTrainingValidation(gtNumpyArray, trainPixSize=100):
 		# assign this part to training data
 		train_idx = np.random.choice(numberDataPixels, size= trainPixSize, replace = False)
 		
+		# extract all other pixels for validation array
 		mask_array = np.ones(numberDataPixels, dtype = int)
 		mask_array[train_idx] = 0
 		
@@ -440,10 +442,10 @@ def loadS2(pathToScenes, cols, rows):
 	
 	
 	Args:
-		path to a folder that contains sentinel 2 tiles that overlap shapefileBoundaries
+		path to a folder that contains sentinel 2 tiles as extracted by findImagery-function
 	
 	Returns:
-		numpy array with every band
+		3D numpy array where each 2D array in third dimension corresponds to a band in sentinel imagery
 	
 		
 	'''
@@ -452,6 +454,7 @@ def loadS2(pathToScenes, cols, rows):
 	import numpy as np
 	from osgeo import gdal
 	
+	# specifiy which bands should be read/loaded
 	certainBand = ('02', '03', '04', '08', '11', '12', '10')	
 	
 	bandList = []
@@ -480,9 +483,17 @@ def loadS2(pathToScenes, cols, rows):
 ############################
 
 def wrapSVM(S2Data, projectFolder, cols, rows, geo_transform, projection, labeled_pixels, trainPixList, labelByValue):
-	''' Wrapper for SVM classification
+	''' Wrapper for SVM classification (Sklearn - LinearSVC)
 
-	test several sample sizes
+	conducts classification process for each numberofPIxels in trainPixList on S2Data
+	and writes output (training data, validation data and classified image) to a folder specified by 
+	date - time (hhmm) and 'sampleSizeTest'
+	
+	folder also contains a logfile.txt for each classification run with several performance measures and the chosen parameters of each run
+	
+	also contained is a processingTime.txt to evaluate processing time and accuracy score in context of chosen training data size
+	
+	penalty Parameter C has to be specified for LinearSVC
 	
 	'''
 	import os
@@ -595,10 +606,9 @@ def svmParam(S2Data, projectFolder, cols, rows, geo_transform, projection, label
 	''' Check C SVM classification on specified number of training pixels per class
 
 	Args
-		same as in wrapSVM except for training Pixel Number (set by trainPixNr)
+		same as in wrapSVM except for training Pixel Number (set by trainPixNr) == constant Parameter
 		List with values for c
-
-	-overwrites existing output directory
+		
 
 	
 	'''
